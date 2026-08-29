@@ -2,19 +2,28 @@
 
 namespace App\Command;
 
+use App\Dto\ParsedArticle;
+use App\Dto\ParsedFeed;
 use App\Entity\Article;
 use App\Entity\Feed;
+use App\Feed\FeedType;
+use App\Feed\FeedTypeDetector;
+use App\Feed\Parser\FeedAtomParser;
+use App\Feed\Parser\FeedJsonParser;
+use App\Feed\Parser\FeedParserInterface;
+use App\Feed\Parser\FeedRss2Parser;
 use App\Repository\ArticleRepository;
 use App\Repository\FeedRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
-use SimpleXMLElement;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
@@ -26,28 +35,30 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 )]
 class FeedPollCommand extends Command
 {
-    private SymfonyStyle $io;
 
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
-        private readonly HttpClientInterface $httpClient,
-        private readonly FeedRepository $feedRepository,
-        private readonly ArticleRepository $articleRepository,
+        private readonly HttpClientInterface    $httpClient,
+        private readonly FeedRepository         $feedRepository,
+        private readonly ArticleRepository      $articleRepository,
+        private readonly FeedTypeDetector       $feedTypeDetector,
+        #[AutowireLocator([FeedAtomParser::class, FeedRss2Parser::class, FeedJsonParser::class])]
+        private readonly ServiceLocator         $feedParsersLocator,
     )
     {
         parent::__construct();
     }
 
     /**
-     * @param Feed $feed
-     * @param SimpleXMLElement $xmlElement
+     * @param ParsedFeed $parsedFeed
      * @return int[]
      */
-    public function handleFeed(Feed $feed, SimpleXMLElement $xmlElement): array
+    public function handleFeed(ParsedFeed $parsedFeed, Feed $feed): array
     {
         $skipped = $created = $noGuid = 0;
 
-        foreach ($xmlElement->channel->item as $item) {
+        /** @var ParsedArticle $item */
+        foreach ($parsedFeed->articles as $item) {
             $guid = isset($item->guid) ? (string) $item->guid : null;
             $link = isset($item->link) ? (string) $item->link : null;
             $key = $guid ?? $link;
@@ -71,7 +82,7 @@ class FeedPollCommand extends Command
             $article = new Article();
             $article->setFeed($feed);
             $article->setGuid($key);
-            $article->setUrl($link);
+            $article->setUrl($item->url);
             $article->setTitle((string)$item->title);
             $article->setSummary(isset($item->description) ? (string)$item->description : null);
             $article->setPublishedAt($this->getPubDate($item->pubDate ?? null));
@@ -120,14 +131,14 @@ class FeedPollCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $this->io = new SymfonyStyle($input, $output);
+        $io = new SymfonyStyle($input, $output);
 
         $argUrl = $input->getArgument('url');
 
         $feeds = $this->getFeeds($argUrl);
 
         if (empty($feeds)) {
-            $this->io->error('No feeds found');
+            $io->error('No feeds found');
             return Command::FAILURE;
         }
 
@@ -138,22 +149,35 @@ class FeedPollCommand extends Command
             $response = $this->httpClient->request(Request::METHOD_GET, $url);
 
             if ($response->getStatusCode() !== Response::HTTP_OK) {
-                $this->io->warning('Status Code: ' . $response->getStatusCode());
+                $io->warning('Status Code: ' . $response->getStatusCode());
                 continue;
             }
 
-            $xmlElement = new SimpleXMLElement($response->getContent());
-            list($created, $skipped, $noGuid) = $this->handleFeed($feed, $xmlElement);
+            $body = $response->getContent();
+
+            $feedType = $this->feedTypeDetector->detect($body, $response->getHeaders()['content-type'][0] ?? null);
+
+            $feedParser = match ($feedType->name) {
+                FeedType::JsonFeed->name => FeedJsonParser::class,
+                FeedType::Atom->name     => FeedAtomParser::class,
+                FeedType::Rss->name      => FeedRss2Parser::class,
+            };
+
+            /** @var FeedParserInterface $feedParser */
+            $feedParser = $this->feedParsersLocator->get($feedParser);
+
+            $parsedFeed = $feedParser->parse($body);
+
+            list($created, $skipped, $noGuid) = $this->handleFeed($parsedFeed, $feed);
             $row[] = [$url, $created, $skipped];
             $totalCreated += $created; $totalSkipped += $skipped; $totalNoGuid += $noGuid;
         }
 
+        $io->comment(sprintf('Use link instead guid %s times', $totalNoGuid));
 
-        $this->io->comment(sprintf('Use link instead guid %s times', $totalNoGuid));
+        $io->table(['Url', 'Created', 'Skipped'], $row);
 
-        $this->io->table(['Url', 'Created', 'Skipped'], $row);
-
-        $this->io->success(sprintf('All created %s articles, skipped %s articles', $totalCreated, $totalSkipped));
+        $io->success(sprintf('All created %s articles, skipped %s articles', $totalCreated, $totalSkipped));
 
         return Command::SUCCESS;
     }

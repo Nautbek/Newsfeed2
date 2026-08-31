@@ -6,12 +6,8 @@ use App\Dto\ParsedArticle;
 use App\Dto\ParsedFeed;
 use App\Entity\Article;
 use App\Entity\Feed;
-use App\Feed\FeedType;
 use App\Feed\FeedTypeDetector;
-use App\Feed\Parser\FeedAtomParser;
-use App\Feed\Parser\FeedJsonParser;
 use App\Feed\Parser\FeedParserInterface;
-use App\Feed\Parser\FeedRss2Parser;
 use App\Repository\ArticleRepository;
 use App\Repository\FeedRepository;
 use DateTimeImmutable;
@@ -50,19 +46,47 @@ class FeedPollCommand extends Command
     }
 
     /**
+     * @param ParsedArticle $item
+     * @return string|null
+     */
+    public function getKey(ParsedArticle $item): ?string
+    {
+        $guid = isset($item->guid) ? (string)$item->guid : null;
+        $link = isset($item->url) ? (string)$item->url : null;
+        return $guid ?? $link ?? null;
+    }
+
+    /**
      * @param ParsedFeed $parsedFeed
      * @param Feed $feed
      * @return int[]
      */
     public function handleFeed(ParsedFeed $parsedFeed, Feed $feed): array
     {
+        $allKeys = [];
+
+        /** @var ParsedArticle $feedItem */
+        foreach ($parsedFeed->articles as $feedItem) {
+            $key = $this->getKey($feedItem);
+
+            if ($key === null) {
+                continue;
+            }
+            $allKeys[] = $key;
+        }
+
+        $existsGuids = $this->articleRepository->findExistingGuids($feed, $allKeys);
+
+        $existsGuids = array_flip($existsGuids);
+
         $skipped = $created = $noGuid = 0;
 
         /** @var ParsedArticle $item */
         foreach ($parsedFeed->articles as $item) {
-            $guid = isset($item->guid) ? (string) $item->guid : null;
-            $link = isset($item->link) ? (string) $item->link : null;
-            $key = $guid ?? $link;
+            $guid = $item->guid;
+            $link = $item->url;
+
+            $key = $this->getKey($item);
             if ($key === null) {
                 continue;
             }
@@ -70,12 +94,7 @@ class FeedPollCommand extends Command
                 $noGuid++;
             }
 
-            $count = $this->articleRepository->count([
-                'feed' => $feed,
-                'guid' => $key,
-            ]);
-
-            if ($count > 0) {
+            if (isset($existsGuids[$key])) {
                 $skipped++;
                 continue;
             }
@@ -85,15 +104,15 @@ class FeedPollCommand extends Command
             $article->setGuid($key);
             $article->setUrl($item->url);
             $article->setTitle((string)$item->title);
-            $article->setSummary(isset($item->description) ? (string)$item->description : null);
-            $article->setPublishedAt($this->getPubDate($item->pubDate ?? null));
+            $article->setSummary(isset($item->summary) ? (string)$item->summary : null);
+            $article->setPublishedAt($item->publishedAt);
 
             $this->entityManager->persist($article);
 
             $created++;
         }
 
-        $feed->setLastPolledAt(new \DateTimeImmutable());
+        $feed->setLastPolledAt(new DateTimeImmutable());
         $this->entityManager->flush();
 
         return array($created, $skipped, $noGuid);
@@ -175,20 +194,5 @@ class FeedPollCommand extends Command
         $io->success(sprintf('All created %s articles, skipped %s articles', $totalCreated, $totalSkipped));
 
         return Command::SUCCESS;
-    }
-
-    private function getPubDate(string|null $date): ?DateTimeImmutable
-    {
-        if ($date === null) {
-            return null;
-        }
-
-        $result = null;
-
-        try {
-            $result = new \DateTimeImmutable($date);
-        } catch (\Exception) {}
-
-        return $result;
     }
 }

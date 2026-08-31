@@ -42,7 +42,7 @@ class FeedPollCommand extends Command
         private readonly FeedRepository         $feedRepository,
         private readonly ArticleRepository      $articleRepository,
         private readonly FeedTypeDetector       $feedTypeDetector,
-        #[AutowireLocator([FeedAtomParser::class, FeedRss2Parser::class, FeedJsonParser::class])]
+        #[AutowireLocator('app.feed_parser', defaultIndexMethod: 'getSupportedType')]
         private readonly ServiceLocator         $feedParsersLocator,
     )
     {
@@ -51,6 +51,7 @@ class FeedPollCommand extends Command
 
     /**
      * @param ParsedFeed $parsedFeed
+     * @param Feed $feed
      * @return int[]
      */
     public function handleFeed(ParsedFeed $parsedFeed, Feed $feed): array
@@ -157,14 +158,8 @@ class FeedPollCommand extends Command
 
             $feedType = $this->feedTypeDetector->detect($body, $response->getHeaders()['content-type'][0] ?? null);
 
-            $feedParser = match ($feedType->name) {
-                FeedType::JsonFeed->name => FeedJsonParser::class,
-                FeedType::Atom->name     => FeedAtomParser::class,
-                FeedType::Rss->name      => FeedRss2Parser::class,
-            };
-
             /** @var FeedParserInterface $feedParser */
-            $feedParser = $this->feedParsersLocator->get($feedParser);
+            $feedParser = $this->feedParsersLocator->get($feedType->value);
 
             $parsedFeed = $feedParser->parse($body);
 

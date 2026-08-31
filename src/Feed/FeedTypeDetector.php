@@ -13,7 +13,7 @@ class FeedTypeDetector
     /**
      * @throws UnsupportedFeedException
      */
-    public static function detect(string $body, ?string $contentType): FeedType
+    public function detect(string $body, ?string $contentType): FeedType
     {
         $feedTypes = FeedType::cases();
 

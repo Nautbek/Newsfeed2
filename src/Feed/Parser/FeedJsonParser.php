@@ -62,4 +62,9 @@ class FeedJsonParser implements FeedParserInterface
 
         return $feed;
     }
+
+    public static function getSupportedType(): string
+    {
+        return FeedType::JsonFeed->value;
+    }
 }

@@ -50,4 +50,9 @@ class FeedRss2Parser implements FeedParserInterface
 
         return $feed;
     }
+
+    public static function getSupportedType(): string
+    {
+        return FeedType::Rss->value;
+    }
 }

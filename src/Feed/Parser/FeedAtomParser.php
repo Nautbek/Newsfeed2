@@ -62,4 +62,9 @@ class FeedAtomParser implements FeedParserInterface
 
         return isset($element->link[0]) ? (string) $element->link[0]['href'] : null;
     }
+
+    public static function getSupportedType(): string
+    {
+        return FeedType::Atom->value;
+    }
 }

@@ -2,10 +2,12 @@
 
 namespace App\Entity;
 
+use App\Listener\ArticleListener;
 use App\Repository\ArticleRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
+#[ORM\EntityListeners([ArticleListener::class])]
 #[ORM\UniqueConstraint(columns: ['feed_id', 'guid'])]
 #[ORM\Entity(repositoryClass: ArticleRepository::class)]
 class Article

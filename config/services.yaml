@@ -25,3 +25,7 @@ services:
     _instanceof:
         App\Feed\Parser\FeedParserInterface:
             tags: ['app.feed_parser']
+
+    App\Listener\ArticleListener:
+        tags:
+            - { name: doctrine.orm.entity_listener }

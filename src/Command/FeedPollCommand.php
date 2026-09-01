@@ -6,6 +6,7 @@ use App\Dto\ParsedArticle;
 use App\Dto\ParsedFeed;
 use App\Entity\Article;
 use App\Entity\Feed;
+use App\Event\ArticleImported;
 use App\Feed\FeedTypeDetector;
 use App\Feed\Parser\FeedParserInterface;
 use App\Repository\ArticleRepository;
@@ -22,6 +23,7 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -33,13 +35,14 @@ class FeedPollCommand extends Command
 {
 
     public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-        private readonly HttpClientInterface    $httpClient,
-        private readonly FeedRepository         $feedRepository,
-        private readonly ArticleRepository      $articleRepository,
-        private readonly FeedTypeDetector       $feedTypeDetector,
+        private readonly EntityManagerInterface   $entityManager,
+        private readonly HttpClientInterface      $httpClient,
+        private readonly FeedRepository           $feedRepository,
+        private readonly ArticleRepository        $articleRepository,
+        private readonly FeedTypeDetector         $feedTypeDetector,
         #[AutowireLocator('app.feed_parser', defaultIndexMethod: 'getSupportedType')]
-        private readonly ServiceLocator         $feedParsersLocator,
+        private readonly ServiceLocator           $feedParsersLocator,
+        private readonly EventDispatcherInterface $dispatcher,
     )
     {
         parent::__construct();
@@ -81,6 +84,8 @@ class FeedPollCommand extends Command
 
         $skipped = $created = $noGuid = 0;
 
+        $articles = [];
+
         /** @var ParsedArticle $item */
         foreach ($parsedFeed->articles as $item) {
             $guid = $item->guid;
@@ -109,11 +114,17 @@ class FeedPollCommand extends Command
 
             $this->entityManager->persist($article);
 
+            $articles[] = $article;
+
             $created++;
         }
 
         $feed->setLastPolledAt(new DateTimeImmutable());
         $this->entityManager->flush();
+
+        foreach ($articles as $article) {
+            $this->dispatcher->dispatch(new ArticleImported($article));
+        }
 
         return array($created, $skipped, $noGuid);
     }

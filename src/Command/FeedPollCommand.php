@@ -9,6 +9,7 @@ use App\Entity\Feed;
 use App\Event\ArticleImported;
 use App\Feed\FeedTypeDetector;
 use App\Feed\Parser\FeedParserInterface;
+use App\Feed\Parser\FeedParserRegistry;
 use App\Repository\ArticleRepository;
 use App\Repository\FeedRepository;
 use DateTimeImmutable;
@@ -40,8 +41,13 @@ class FeedPollCommand extends Command
         private readonly FeedRepository           $feedRepository,
         private readonly ArticleRepository        $articleRepository,
         private readonly FeedTypeDetector         $feedTypeDetector,
+
+        // Первый способ получить парсер автоматически.
         #[AutowireLocator('app.feed_parser', defaultIndexMethod: 'getSupportedType')]
         private readonly ServiceLocator           $feedParsersLocator,
+
+        private readonly FeedParserRegistry       $feedParsersRegistry,
+
         private readonly EventDispatcherInterface $dispatcher,
     )
     {
@@ -190,6 +196,10 @@ class FeedPollCommand extends Command
 
             /** @var FeedParserInterface $feedParser */
             $feedParser = $this->feedParsersLocator->get($feedType->value);
+
+            // Бессмысленно, просто для памяти, что е сть еще и такой способ.
+            /** @var FeedParserInterface $feedParser */
+            $feedParser = $this->feedParsersRegistry->get($feedType->value);
 
             $parsedFeed = $feedParser->parse($body);
 

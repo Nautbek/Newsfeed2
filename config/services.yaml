@@ -29,3 +29,7 @@ services:
     App\Listener\ArticleListener:
         tags:
             - { name: doctrine.orm.entity_listener }
+
+#    App\Feed\Parser\FeedParserRegistry:
+#        arguments:
+#            $parsers: []

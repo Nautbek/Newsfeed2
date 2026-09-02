@@ -41,6 +41,10 @@ class FeedTypeDetector
      */
     public static function getFeedType(?string $contentType): ?FeedType
     {
+        if ($contentType === null) {
+            return null;
+        }
+
         $feedTypes = [
             self::CONTENT_TYPE_RSS  => FeedType::Rss,
             self::CONTENT_TYPE_JSON => FeedType::JsonFeed,

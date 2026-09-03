@@ -6,8 +6,10 @@ use App\Dto\ParsedArticle;
 use App\Dto\ParsedFeed;
 use App\Exceptions\UnsupportedFeedException;
 use App\Feed\FeedType;
+use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 use Symfony\Component\DependencyInjection\Attribute\Autoconfigure;
 
+#[AsTaggedItem(index: FeedType::Atom->value)]
 #[Autoconfigure(tags: [['name' => 'app.feed_parser', 'priority' => 10]])]
 class FeedAtomParser implements FeedParserInterface
 {

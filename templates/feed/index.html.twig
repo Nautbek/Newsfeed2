@@ -1,0 +1,16 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Hello FeedController!{% endblock %}
+
+{% block body %}
+
+<div>
+    <h1>Feeds:</h1>
+
+    <ul>
+        {% for feed in feeds %}
+            <li> {{ feed.url }} </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

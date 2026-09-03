@@ -43,7 +43,7 @@ class FeedPollCommand extends Command
         private readonly FeedTypeDetector         $feedTypeDetector,
 
         // Первый способ получить парсер автоматически.
-        #[AutowireLocator('app.feed_parser', defaultIndexMethod: 'getSupportedType')]
+        #[AutowireLocator('app.feed_parser')]
         private readonly ServiceLocator           $feedParsersLocator,
 
         private readonly FeedParserRegistry       $feedParsersRegistry,

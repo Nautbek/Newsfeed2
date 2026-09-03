@@ -6,7 +6,9 @@ use App\Dto\ParsedArticle;
 use App\Dto\ParsedFeed;
 use App\Exceptions\UnsupportedFeedException;
 use App\Feed\FeedType;
+use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 
+#[AsTaggedItem(index: FeedType::Rss->value)]
 class FeedRss2Parser implements FeedParserInterface
 {
     /**

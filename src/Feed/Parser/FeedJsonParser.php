@@ -7,7 +7,9 @@ use App\Dto\ParsedFeed;
 use App\Entity\Source;
 use App\Exceptions\UnsupportedFeedException;
 use App\Feed\FeedType;
+use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 
+#[AsTaggedItem(index: FeedType::JsonFeed->value)]
 class FeedJsonParser implements FeedParserInterface
 {
     private const SUPPORTED_VERSION = 'https://jsonfeed.org/version/1.1';

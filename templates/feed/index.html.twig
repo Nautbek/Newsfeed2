@@ -9,7 +9,7 @@
 
     <ul>
         {% for feed in feeds %}
-            <li> {{ feed.url }} </li>
+            <li> {{ feed.articles|length }} {{ feed.url }} </li>
         {% endfor %}
     </ul>
 </div>

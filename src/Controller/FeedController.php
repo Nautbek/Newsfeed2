@@ -12,10 +12,9 @@ final class FeedController extends AbstractController
     #[Route('/feeds')]
     public function index(FeedRepository $feedRepository): Response
     {
-        $feeds = $feedRepository->findAll();
+        $feeds = $feedRepository->getAllFeeds();
 
         return $this->render('feed/index.html.twig', [
-            'controller_name' => 'FeedController',
             'feeds' => $feeds,
         ]);
     }

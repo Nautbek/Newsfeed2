@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\FeedRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: FeedRepository::class)]
@@ -32,9 +34,16 @@ class Feed
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
+    /**
+     * @var Collection<int, Article>
+     */
+    #[ORM\OneToMany(targetEntity: Article::class, mappedBy: 'feed')]
+    private Collection $articles;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
+        $this->articles = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -110,6 +119,36 @@ class Feed
     public function setCreatedAt(\DateTimeImmutable $createdAt): static
     {
         $this->createdAt = $createdAt;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Article>
+     */
+    public function getArticles(): Collection
+    {
+        return $this->articles;
+    }
+
+    public function addArticle(Article $article): static
+    {
+        if (!$this->articles->contains($article)) {
+            $this->articles->add($article);
+            $article->setаfeed2($this);
+        }
+
+        return $this;
+    }
+
+    public function removeArticle(Article $article): static
+    {
+        if ($this->articles->removeElement($article)) {
+            // set the owning side to null (unless already changed)
+            if ($article->getаfeed2() === $this) {
+                $article->setаfeed2(null);
+            }
+        }
 
         return $this;
     }

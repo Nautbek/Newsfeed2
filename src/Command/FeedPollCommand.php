@@ -2,31 +2,16 @@
 
 namespace App\Command;
 
-use App\Dto\ParsedArticle;
-use App\Dto\ParsedFeed;
-use App\Entity\Article;
 use App\Entity\Feed;
-use App\Event\ArticleImported;
-use App\Feed\FeedTypeDetector;
-use App\Feed\Parser\FeedParserInterface;
-use App\Feed\Parser\FeedParserRegistry;
-use App\Repository\ArticleRepository;
+use App\Message\PollFeedMessage;
 use App\Repository\FeedRepository;
-use DateTimeImmutable;
-use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
-use Symfony\Component\DependencyInjection\ServiceLocator;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
-use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 #[AsCommand(
     name: 'app:feed:poll',
@@ -34,105 +19,12 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 )]
 class FeedPollCommand extends Command
 {
-
     public function __construct(
-        private readonly EntityManagerInterface   $entityManager,
-        private readonly HttpClientInterface      $httpClient,
         private readonly FeedRepository           $feedRepository,
-        private readonly ArticleRepository        $articleRepository,
-        private readonly FeedTypeDetector         $feedTypeDetector,
-
-        // Первый способ получить парсер автоматически.
-        #[AutowireLocator('app.feed_parser')]
-        private readonly ServiceLocator           $feedParsersLocator,
-
-        private readonly FeedParserRegistry       $feedParsersRegistry,
-
-        private readonly EventDispatcherInterface $dispatcher,
+        private readonly MessageBusInterface      $messageBus,
     )
     {
         parent::__construct();
-    }
-
-    /**
-     * @param ParsedArticle $item
-     * @return string|null
-     */
-    public function getKey(ParsedArticle $item): ?string
-    {
-        $guid = isset($item->guid) ? (string)$item->guid : null;
-        $link = isset($item->url) ? (string)$item->url : null;
-        return $guid ?? $link ?? null;
-    }
-
-    /**
-     * @param ParsedFeed $parsedFeed
-     * @param Feed $feed
-     * @return int[]
-     */
-    public function handleFeed(ParsedFeed $parsedFeed, Feed $feed): array
-    {
-        $allKeys = [];
-
-        /** @var ParsedArticle $feedItem */
-        foreach ($parsedFeed->articles as $feedItem) {
-            $key = $this->getKey($feedItem);
-
-            if ($key === null) {
-                continue;
-            }
-            $allKeys[] = $key;
-        }
-
-        $existsGuids = $this->articleRepository->findExistingGuids($feed, $allKeys);
-
-        $existsGuids = array_flip($existsGuids);
-
-        $skipped = $created = $noGuid = 0;
-
-        $articles = [];
-
-        /** @var ParsedArticle $item */
-        foreach ($parsedFeed->articles as $item) {
-            $guid = $item->guid;
-            $link = $item->url;
-
-            $key = $this->getKey($item);
-            if ($key === null) {
-                continue;
-            }
-            if ($guid === null && $link !== null) {
-                $noGuid++;
-            }
-
-            if (isset($existsGuids[$key])) {
-                $skipped++;
-                continue;
-            }
-
-            $article = new Article();
-            $article->setFeed($feed);
-            $article->setGuid($key);
-            $article->setUrl($item->url);
-            $article->setTitle((string)$item->title);
-            $article->setSummary(isset($item->summary) ? (string)$item->summary : null);
-            $article->setPublishedAt($item->publishedAt);
-
-            $this->entityManager->persist($article);
-
-            $articles[] = $article;
-
-            $created++;
-        }
-
-        $feed->setLastPolledAt(new DateTimeImmutable());
-        $this->entityManager->flush();
-
-        foreach ($articles as $article) {
-            $this->dispatcher->dispatch(new ArticleImported($article));
-        }
-
-        return array($created, $skipped, $noGuid);
     }
 
     /**
@@ -162,10 +54,6 @@ class FeedPollCommand extends Command
         ;
     }
 
-    /**
-     * @throws TransportExceptionInterface
-     * @throws \Exception
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
@@ -179,40 +67,9 @@ class FeedPollCommand extends Command
             return Command::FAILURE;
         }
 
-        $totalCreated = $totalSkipped = $totalNoGuid = 0;
-        $row = [];
         foreach ($feeds as $feed) {
-            $url = $feed->getUrl();
-            $response = $this->httpClient->request(Request::METHOD_GET, $url);
-
-            if ($response->getStatusCode() !== Response::HTTP_OK) {
-                $io->warning('Status Code: ' . $response->getStatusCode());
-                continue;
-            }
-
-            $body = $response->getContent();
-
-            $feedType = $this->feedTypeDetector->detect($body, $response->getHeaders()['content-type'][0] ?? null);
-
-            /** @var FeedParserInterface $feedParser */
-            $feedParser = $this->feedParsersLocator->get($feedType->value);
-
-            // Бессмысленно, просто для памяти, что е сть еще и такой способ.
-            /** @var FeedParserInterface $feedParser */
-            $feedParser = $this->feedParsersRegistry->get($feedType->value);
-
-            $parsedFeed = $feedParser->parse($body);
-
-            list($created, $skipped, $noGuid) = $this->handleFeed($parsedFeed, $feed);
-            $row[] = [$url, $created, $skipped];
-            $totalCreated += $created; $totalSkipped += $skipped; $totalNoGuid += $noGuid;
+            $this->messageBus->dispatch(new PollFeedMessage($feed->getId()));
         }
-
-        $io->comment(sprintf('Use link instead guid %s times', $totalNoGuid));
-
-        $io->table(['Url', 'Created', 'Skipped'], $row);
-
-        $io->success(sprintf('All created %s articles, skipped %s articles', $totalCreated, $totalSkipped));
 
         return Command::SUCCESS;
     }

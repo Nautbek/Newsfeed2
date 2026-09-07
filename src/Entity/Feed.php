@@ -40,6 +40,9 @@ class Feed
     #[ORM\OneToMany(targetEntity: Article::class, mappedBy: 'feed')]
     private Collection $articles;
 
+    #[ORM\Column(nullable: true)]
+    private ?int $pollInterval = null;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
@@ -149,6 +152,18 @@ class Feed
                 $article->setаfeed2(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getPollInterval(): ?int
+    {
+        return $this->pollInterval;
+    }
+
+    public function setPollInterval(?int $pollInterval): static
+    {
+        $this->pollInterval = $pollInterval;
 
         return $this;
     }
